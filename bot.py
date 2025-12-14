@@ -1,14 +1,14 @@
 import asyncio
 import random
-from pathlib import Path
-
 from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ParseMode
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, FSInputFile
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.client.default import DefaultBotProperties
 
-# ===== TOKEN =====
-TOKEN = Path("token.txt").read_text().strip()
+# === токен ===
+with open("token.txt", "r") as f:
+    TOKEN = f.read().strip()
 
 bot = Bot(
     TOKEN,
@@ -16,127 +16,122 @@ bot = Bot(
 )
 dp = Dispatcher()
 
-# ===== GAME STATE =====
-players = []
-roles = {}
-current_index = 0
-word = ""
-video_message_id = None
-
+# === слова ===
 WORDS = [
-    "Аэропорт", "Библиотека", "Школа", "Университет", "Метро", "Больница",
-    "Стадион", "Ресторан", "Кинотеатр", "Отель", "Казино", "Пляж",
-    "Парк", "Зоопарк", "Аквапарк", "Ферма", "Рынок", "Супермаркет",
-    "Полицейский участок", "Тюрьма", "Пожарная часть", "Церковь",
-    "Мечеть", "Музей", "Театр", "Цирк", "Кафе", "Бар",
-    "Ночной клуб", "Клуб", "Бассейн", "Спортзал", "Сауна",
-    "Гараж", "Автосервис", "Заправка", "Магазин одежды",
-    "Бутик", "Ломбард", "Банк", "Обменник", "Офис",
-    "Колл-центр", "Склад", "Порт", "Корабль", "Самолет",
-    "Поезд", "Такси", "Автобус", "Трамвай", "Троллейбус",
-    "Лифт", "Подъезд", "Крыша", "Подвал", "Чердак",
-    "Стройка", "Завод", "Фабрика", "Лаборатория",
-    "Серверная", "IT-офис", "Хакерспейс", "Коворкинг",
-    "Стрим-хата", "Студия", "Телестудия", "Радио",
-    "Редакция", "Типография", "Почта", "Сортировка",
-    "Архив", "Библиотечный зал", "Читальный зал",
-    "Экзамен", "Контрольная", "Лекция", "Семинар",
-    "Кафедра", "Деканат", "Общежитие", "Кухня",
-    "Комната", "Балкон", "Двор", "Детская площадка"
+    "Арбуз", "Тачка", "Гараж", "Переулок", "Шахта", "Кирпич", "Пицца",
+    "Танк", "Рюкзак", "Телефон", "Кофе", "Пляж", "Лифт", "Рынок",
+    "Окно", "Школа", "Парк", "Самолёт", "Кино", "Метро",
+    "Провод", "Розетка", "Магазин", "Пакет", "Бассейн",
+    "Фонарик", "Ковёр", "Кроссовки", "Ракета", "Карта"
 ]
 
-# ===== KEYBOARDS =====
-def watch_kb():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="👀 Посмотреть", callback_data="watch")]
-        ]
-    )
+# === состояние игры ===
+game = {
+    "players": [],
+    "spy": None,
+    "word": None,
+    "current": 0,
+    "chat_id": None,
+    "prompt_msg_id": None
+}
 
-def next_kb():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="➡️ Следующий игрок", callback_data="next")]
-        ]
-    )
+# === кнопки ===
+def view_button():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="👁 Посмотреть", callback_data="view")
+    return kb.as_markup()
 
-# ===== HANDLERS =====
+def next_button():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="➡ Следующий игрок", callback_data="next")
+    return kb.as_markup()
+
+# === /start ===
 @dp.message(F.text == "/start")
-async def start(msg: Message):
-    await msg.delete()
-    await msg.answer(
-        "Введите имена игроков через пробел\n"
-        "Пример: Иван Макс Лера"
+async def start_cmd(msg: Message):
+    game["players"] = []
+    game["current"] = 0
+    game["chat_id"] = msg.chat.id
+
+    sent = await msg.answer(
+        "🎮 <b>Игра Шпион</b> 🕵\n\n"
+        "Введите имена игроков через пробел"
     )
 
+    game["prompt_msg_id"] = sent.message_id
+
+# === ввод имён ===
 @dp.message()
-async def get_names(msg: Message):
-    global players, roles, word, current_index
+async def get_players(msg: Message):
+    if game["chat_id"] is None:
+        return
 
-    players = msg.text.split()
-    await msg.delete()
+    players = [p.strip() for p in msg.text.split() if p.strip()]
+    if len(players) < 3:
+        await msg.answer("Минимум 3 игрока.")
+        return
 
-    word = random.choice(WORDS)
-    spy = random.choice(players)
+    game["players"] = players
+    game["current"] = 0
+    game["word"] = random.choice(WORDS)
+    game["spy"] = random.randint(0, len(players) - 1)
 
-    roles = {}
-    for p in players:
-        roles[p] = "spy" if p == spy else word
-
-    current_index = 0
+    # чистим чат
+    try:
+        await msg.delete()
+        await bot.delete_message(game["chat_id"], game["prompt_msg_id"])
+    except:
+        pass
 
     await msg.answer(
-        f"📱 Передайте телефон игроку:\n\n<b>{players[current_index]}</b>",
-        reply_markup=watch_kb()
+        f"Передайте телефон игроку: <b>{players[0]}</b>",
+        reply_markup=view_button()
     )
 
-@dp.callback_query(F.data == "watch")
-async def watch(cb):
-    player = players[current_index]
-    role = roles[player]
+# === посмотреть ===
+@dp.callback_query(F.data == "view")
+async def view_role(clb: CallbackQuery):
+    idx = game["current"]
+    name = game["players"][idx]
 
-    await cb.message.edit_text(
-        f"<b>{player}</b>\n\n"
-        + ("🕵️ <b>Ты ШПИОН</b>" if role == "spy" else f"🔑 Твое слово: <b>{role}</b>")
-        + "\n\n<i>✔ прочитано</i>",
-        reply_markup=next_kb()
-    )
-    await cb.answer()
-
-@dp.callback_query(F.data == "next")
-async def next_player(cb):
-    global current_index
-
-    await cb.message.delete()
-    current_index += 1
-
-    if current_index < len(players):
-        await cb.message.answer(
-            f"📱 Передайте телефон игроку:\n\n<b>{players[current_index]}</b>",
-            reply_markup=watch_kb()
-        )
+    if idx == game["spy"]:
+        text = f"🕵 <b>{name}</b> — ТЫ ШПИОН"
     else:
-        await start_timer(cb.message.chat.id)
+        text = f"🔤 <b>{name}</b>, твоё слово:\n<b>{game['word']}</b>"
 
-    await cb.answer()
+    await clb.message.answer(text, reply_markup=next_button())
+    await clb.message.delete()
+    await clb.answer()
 
-# ===== TIMER =====
-async def start_timer(chat_id):
-    global video_message_id
+# === следующий игрок ===
+@dp.callback_query(F.data == "next")
+async def next_player(clb: CallbackQuery):
+    await clb.message.delete()
+    game["current"] += 1
 
-    msg = await bot.send_video(
-        chat_id=chat_id,
-        video=open("timer.mp4", "rb"),
-        caption="⏳ Игра началась"
+    # все посмотрели
+    if game["current"] >= len(game["players"]):
+        video = FSInputFile("timer.mp4")
+        timer_msg = await clb.message.answer_video(video)
+
+        await asyncio.sleep(180)
+
+        try:
+            await bot.delete_message(game["chat_id"], timer_msg.message_id)
+        except:
+            pass
+
+        await clb.message.answer("⏰ Время вышло! Голосуйте.")
+        return
+
+    next_name = game["players"][game["current"]]
+    await clb.message.answer(
+        f"Передайте телефон игроку: <b>{next_name}</b>",
+        reply_markup=view_button()
     )
-    video_message_id = msg.message_id
+    await clb.answer()
 
-    await asyncio.sleep(180)
-
-    await bot.delete_message(chat_id, video_message_id)
-    await bot.send_message(chat_id, "🗳 Время вышло! Голосуйте")
-
-# ===== RUN =====
+# === запуск ===
 async def main():
     await dp.start_polling(bot)
 
