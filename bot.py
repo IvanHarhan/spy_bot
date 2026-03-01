@@ -6,7 +6,6 @@ from aiogram.types import Message, CallbackQuery, FSInputFile
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.client.default import DefaultBotProperties
 
-# === токен ===
 with open("token.txt", "r") as f:
     TOKEN = f.read().strip()
 
@@ -16,7 +15,6 @@ bot = Bot(
 )
 dp = Dispatcher()
 
-# === слова ===
 WORDS = [
     "пельмени","скинхед","нацист","пидор","гетто","огород","гитлер","шмаль","бухич","говно","бокс",
     "борьба","илонмаск","пиздабол","чеченцы","талахоны","нефоры","беседки","НЭТ","пизделка","футбольныехулиганы","бангоф","веталь",
@@ -25,7 +23,6 @@ WORDS = [
     "денис","артем","вова","киррил","максим","павло","пенсия"
 ]
 
-# === состояние игры ===
 game = {
     "players": [],
     "spy": None,
@@ -35,7 +32,6 @@ game = {
     "prompt_msg_id": None
 }
 
-# === кнопки ===
 def view_button():
     kb = InlineKeyboardBuilder()
     kb.button(text="👁 Почекать", callback_data="view")
@@ -46,7 +42,6 @@ def next_button():
     kb.button(text="➡ Следующий игрок", callback_data="next")
     return kb.as_markup()
 
-# === /start ===
 @dp.message(F.text == "/start")
 async def start_cmd(msg: Message):
     game["players"] = []
@@ -60,7 +55,6 @@ async def start_cmd(msg: Message):
 
     game["prompt_msg_id"] = sent.message_id
 
-# === ввод имён ===
 @dp.message()
 async def get_players(msg: Message):
     if game["chat_id"] is None:
@@ -76,7 +70,6 @@ async def get_players(msg: Message):
     game["word"] = random.choice(WORDS)
     game["spy"] = random.randint(0, len(players) - 1)
 
-    # чистим чат
     try:
         await msg.delete()
         await bot.delete_message(game["chat_id"], game["prompt_msg_id"])
@@ -88,7 +81,6 @@ async def get_players(msg: Message):
         reply_markup=view_button()
     )
 
-# === посмотреть ===
 @dp.callback_query(F.data == "view")
 async def view_role(clb: CallbackQuery):
     idx = game["current"]
@@ -103,13 +95,11 @@ async def view_role(clb: CallbackQuery):
     await clb.message.delete()
     await clb.answer()
 
-# === следующий игрок ===
 @dp.callback_query(F.data == "next")
 async def next_player(clb: CallbackQuery):
     await clb.message.delete()
     game["current"] += 1
 
-    # все посмотрели
     if game["current"] >= len(game["players"]):
         video = FSInputFile("timer.mp4")
         timer_msg = await clb.message.answer_video(video)
@@ -131,9 +121,9 @@ async def next_player(clb: CallbackQuery):
     )
     await clb.answer()
 
-# === запуск ===
 async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
+
