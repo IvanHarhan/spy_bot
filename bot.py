@@ -6,8 +6,7 @@ from aiogram.types import Message, CallbackQuery, FSInputFile
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.client.default import DefaultBotProperties
 
-with open("token.txt", "r") as f:
-    TOKEN = f.read().strip()
+from token_file import TOKEN
 
 bot = Bot(
     TOKEN,
